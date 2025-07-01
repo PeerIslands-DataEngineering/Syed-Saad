@@ -1,0 +1,34 @@
+def check_winner(board):
+    winner = None
+    for i in range(3):
+        if all(cell == "" for cell in board[i]):
+            continue
+        row = {"X": 0, "O": 0}
+        col = {"X": 0, "O": 0}
+        for j in range(3):
+            row[board[i][j]] = row.get(board[i][j], 0) + 1
+            col[board[j][i]] = col.get(board[j][i], 0) + 1
+        if row["X"] == 3 or col["X"] == 3:
+            winner = "X"
+            break
+        if row["O"] == 3 or col["O"] == 3:
+            winner = "O"
+            break
+    diag1 = {"X": 0, "O": 0}
+    diag2 = {"X": 0, "O": 0}
+    for i in range(3):
+        diag1[board[i][i]] = diag1.get(board[i][i], 0) + 1
+        diag2[board[i][2 - i]] = diag2.get(board[i][2 - i], 0) + 1
+    if diag1["X"] == 3 or diag2["X"] == 3:
+        winner = "X"
+    if diag1["O"] == 3 or diag2["O"] == 3:
+        winner = "O"
+    return winner if winner else "Draw"
+
+board = [
+    ["X", "O", "X"],
+    ["O", "X", ""],
+    ["O", "", "X"]
+]
+
+print(check_winner(board))
