@@ -1,0 +1,42 @@
+# Step 1: Set up Spark Session
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, upper, trim, to_date, current_date, datediff
+
+spark = SparkSession.builder \
+    .appName("MedallionArchitecturePipeline") \
+    .getOrCreate()
+
+# Step 2: Load CSV into Bronze Layer (Raw Data)
+bronze_path = "dbfs:/FileStore/lakehouse/bronze/customer_transactions_bronze"
+df_bronze = spark.read.option("header", True).csv("dbfs:/FileStore/tables/customer_transactions_large.csv")
+df_bronze.write.format("delta").mode("overwrite").save(bronze_path)
+
+# Step 3: Clean Data into Silver Layer
+df_silver = df_bronze.dropDuplicates(["transaction_id"]) \
+    .filter(col("amount").isNotNull() & (col("amount") > 0) & col("transaction_date").isNotNull()) \
+    .withColumn("transaction_date", to_date(col("transaction_date"), "MM/dd/yyyy")) \
+    .withColumn("product_category", upper(trim(col("product_category")))) \
+    .withColumn("region", trim(col("region")))
+
+silver_path = "dbfs:/FileStore/lakehouse/silver/customer_transactions_silver"
+df_silver.write.format("delta").mode("overwrite").save(silver_path)
+
+# Step 4: Aggregate into Gold Layer
+df_gold = df_silver.groupBy("customer_id", "region", "product_category") \
+    .sum("amount") \
+    .withColumnRenamed("sum(amount)", "total_spent")
+
+gold_path = "dbfs:/FileStore/lakehouse/gold/customer_aggregates_gold"
+df_gold.write.format("delta").mode("overwrite").save(gold_path)
+
+# Step 5: Identify Inactive Customers (Churn Analysis)
+df_recent = df_silver.withColumn("days_since", datediff(current_date(), col("transaction_date")))
+df_churn = df_recent.filter(col("days_since") > 30).select("customer_id").distinct()
+df_churn.show()
+
+# Step 6: Reconciliation Between Bronze and Silver
+bronze_count = df_bronze.select("transaction_id").distinct().count()
+silver_count = df_silver.select("transaction_id").distinct().count()
+print(f"Bronze transactions: {bronze_count}")
+print(f"Silver transactions: {silver_count}")
+print(f"Missing or bad records filtered out: {bronze_count - silver_count}")
